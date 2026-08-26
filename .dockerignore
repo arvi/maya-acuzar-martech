@@ -1,0 +1,38 @@
+# build output
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# vcs
+.git
+.gitignore
+
+# tooling
+biome.json
+cspell.json
+
+# tests
+**/*.spec.ts
+**/*.e2e-spec.ts
+
+# environment variables
+.env
+.env.*
+
+# logs
+*.log
+
+# docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# OS
+.DS_Store
+
+# docs
+README.md
+*.md
+
+

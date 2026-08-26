@@ -1,0 +1,6 @@
+{
+  "version": "0.2",
+  "words": ["dbgate", "arvi", "martech", "isready"],
+  "dictionaries": ["typescript", "node", "docker", "en-common-misspellings"],
+  "ignorePaths": ["node_modules", "biome.json", "dist/", "package.json"]
+}

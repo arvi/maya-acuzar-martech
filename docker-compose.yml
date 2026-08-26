@@ -1,0 +1,70 @@
+services:
+  # 1. PostgreSQL DB
+  postgres:
+    image: postgres:16-alpine
+    container_name: maya_arvi_martech_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+    ports:
+      - "${POSTGRES_HOST_PORT:?required}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. NestJS API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: maya_arvi_martech_nestjs_api
+    restart: always
+    ports:
+      - "${API_HOST_PORT:?required}:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # 3. DbGate DB UI
+  dbgate:
+    image: dbgate/dbgate:alpine
+    container_name: maya_arvi_martech_dbgate
+    restart: always
+    ports:
+      - "${DBGATE_HOST_PORT:?required}:3000"
+    environment:
+      CONNECTIONS: db
+      LABEL_db: Maya Arvi Martech Postgres
+      SERVER_db: postgres
+      PORT_db: 5432
+      USER_db: ${POSTGRES_USER}
+      PASSWORD_db: ${POSTGRES_PASSWORD}
+      ENGINE_db: postgres@dbgate-plugin-postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  postgres_data:
