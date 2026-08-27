@@ -10,6 +10,7 @@ import { AuthIdentity } from './holders/entities/auth-identity.entity';
 import { CorporateHolder } from './holders/entities/corporate-holder.entity';
 import { CorporateSignatory } from './holders/entities/corporate-signatory.entity';
 import { IndividualHolder } from './holders/entities/individual-holder.entity';
+import { MeModule } from './me/me.module';
 import { SendMoneyModule } from './send-money/send-money.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { SendMoneyModule } from './send-money/send-money.module';
     HealthModule,
     AccountsModule,
     SendMoneyModule,
+    MeModule,
   ],
   controllers: [],
   providers: [],

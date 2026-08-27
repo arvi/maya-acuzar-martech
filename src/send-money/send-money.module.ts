@@ -30,5 +30,8 @@ import { SendMoneyRulesService } from './send-money-rules.service';
     RecipientResolverService,
     ResolutionTokenService,
   ],
+  // MeModule resolves a holder's single active account by the identical rule,
+  // so /me and a transfer can never disagree about which account is "yours".
+  exports: [RecipientResolverService],
 })
 export class SendMoneyModule {}
