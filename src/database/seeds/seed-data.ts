@@ -44,6 +44,8 @@ interface AccountSeed {
   accountNumber: string;
   /** Credited to the account by an opening ledger entry. */
   openingBalanceMinor: number;
+  /** Defaults to 'active'. */
+  status?: 'active' | 'suspended' | 'closed';
 }
 
 interface LimitSeed {
@@ -62,6 +64,8 @@ interface IndividualSeed {
   identities: IdentitySeed[];
   accounts: AccountSeed[];
   limits: LimitSeed;
+  /** Defaults to 'active'. */
+  status?: 'active' | 'suspended' | 'closed';
 }
 
 interface CorporateSeed {
@@ -73,6 +77,8 @@ interface CorporateSeed {
   identities: IdentitySeed[];
   accounts: AccountSeed[];
   limits: LimitSeed;
+  /** Defaults to 'active'. */
+  status?: 'active' | 'suspended' | 'closed';
 }
 
 type HolderSeed = IndividualSeed | CorporateSeed;
@@ -154,6 +160,33 @@ export const HOLDER_SEEDS: HolderSeed[] = [
     ],
     accounts: [
       { accountNumber: '1000000004', openingBalanceMinor: php('1999.99') },
+    ],
+    limits: DEFAULT_LIMITS,
+  },
+  {
+    // Suspended at both levels on purpose: one fixture exercises two
+    // rejections. /dev/token still mints a token for them, the guard rejects it
+    // (sender path), and naming them as a recipient fails on account status.
+    kind: 'individual',
+    displayName: 'Bobbie Salazar',
+    firstName: 'Bobbie',
+    lastName: 'Salazar',
+    dateOfBirth: '1991-04-22',
+    status: 'suspended',
+    identities: [
+      {
+        subject: 'seed-bobbie-salazar',
+        username: 'bobbie.salazar',
+        email: 'bobbie.salazar@example.com',
+        mobileNumber: '09170000105',
+      },
+    ],
+    accounts: [
+      {
+        accountNumber: '1000000005',
+        openingBalanceMinor: php(12_000),
+        status: 'suspended',
+      },
     ],
     limits: DEFAULT_LIMITS,
   },
@@ -241,9 +274,9 @@ async function insertHolder(
   holder: HolderSeed,
 ): Promise<void> {
   const [{ id: holderId }] = await manager.query(
-    `INSERT INTO account_holders (holder_type, display_name)
-     VALUES ($1, $2) RETURNING id`,
-    [holder.kind, holder.displayName],
+    `INSERT INTO account_holders (holder_type, display_name, status)
+     VALUES ($1, $2, $3) RETURNING id`,
+    [holder.kind, holder.displayName, holder.status ?? 'active'],
   );
 
   const signatoryIds = new Map<string, number>();
@@ -309,9 +342,14 @@ async function insertHolder(
 
   for (const account of holder.accounts) {
     const [{ id: accountId }] = await manager.query(
-      `INSERT INTO accounts (account_holder_id, account_number, balance_minor)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [holderId, account.accountNumber, account.openingBalanceMinor],
+      `INSERT INTO accounts (account_holder_id, account_number, balance_minor, status)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [
+        holderId,
+        account.accountNumber,
+        account.openingBalanceMinor,
+        account.status ?? 'active',
+      ],
     );
 
     // The ledger is the source of truth and accounts.balance_minor is a cache
