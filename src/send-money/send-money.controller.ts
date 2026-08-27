@@ -42,7 +42,7 @@ export class SendMoneyController {
       'On success the `resolutionToken` is valid for 120 seconds. It is re-validated on POST /v1/send-money — a stale token is expected to fail, and every rule is re-run against live balances before money moves.',
     externalDocs: {
       description: 'Scenario walkthrough',
-      url: 'https://github.com/#docs/SEND-MONEY.md',
+      url: 'https://github.com/#docs/SEND_MONEY.md',
     },
   })
   @ApiOkResponse({
