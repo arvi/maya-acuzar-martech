@@ -7,7 +7,7 @@
 1. Create `.env`. See [.env.example](.env.example).
 2. Start application and database.
 ```bash
-docker compose up --build
+docker compose up
 ```
 
 ## Links
