@@ -1,6 +1,28 @@
 {
   "version": "0.2",
-  "words": ["dbgate", "arvi", "martech", "isready"],
-  "dictionaries": ["typescript", "node", "docker", "en-common-misspellings"],
+  "words": [
+    "dbgate",
+    "arvi",
+    "martech",
+    "isready",
+    "plpgsql",
+    "errcode",
+    "pgcrypto",
+    "centavos",
+    "unforgeable",
+    "Adelaida",
+    "Magtalas",
+    "Fabregas",
+    "Miggy",
+    "delrosario"
+  ],
+  "dictionaries": [
+    "typescript",
+    "node",
+    "docker",
+    "en-common-misspellings",
+    "en-gb",
+    "sql"
+  ],
   "ignorePaths": ["node_modules", "biome.json", "dist/", "package.json"]
 }
