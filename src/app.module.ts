@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccountsModule } from './accounts/accounts.module';
+import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AccountHolder } from './holders/entities/account-holder.entity';
@@ -27,6 +28,7 @@ import { TransfersModule } from './transfers/transfers.module';
       AuthIdentity,
     ]),
 
+    AuthModule,
     HealthModule,
     AccountsModule,
     TransfersModule,

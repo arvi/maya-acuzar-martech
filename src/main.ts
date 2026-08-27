@@ -1,4 +1,4 @@
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -35,6 +35,13 @@ async function bootstrap() {
     .build();
   const documentFactory = () => SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, documentFactory);
+
+  if (process.env.NODE_ENV !== 'production') {
+    Logger.warn(
+      `NODE_ENV=${process.env.NODE_ENV ?? 'unset'} — POST /v1/dev/token is ENABLED and mints access tokens for any seeded identity without a password. Never run this configuration in production.`,
+      'Bootstrap',
+    );
+  }
 
   await app.listen(process.env.PORT ?? 3000);
 }
