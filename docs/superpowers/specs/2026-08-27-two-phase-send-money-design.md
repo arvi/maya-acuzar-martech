@@ -612,19 +612,16 @@ is missing for the stack to come up already migrated, already seeded, and
 demoable. No `npm run demo` script — a second entry point that does the same
 thing differently is a way for the two to drift.
 
-**Problem 1 — the api container runs `NODE_ENV=production`,** under which this
-design disables `/dev/token` and hard-fails bootstrap on unset JWT secrets. As
-shipped, `docker compose up` would produce an app the demo cannot drive.
-
-Compose sets `NODE_ENV: demo` on the api service instead. Every production
+**Mode.** Compose sets `NODE_ENV: demo` on the api service. Every production
 hardening check keys off `NODE_ENV === 'production'` **exactly**, so `demo`
 behaves as a non-production build: the dev-token module is registered and the
 secret fallbacks apply. The `Dockerfile` keeps its own `ENV NODE_ENV=production`
 so the image is still safe to deploy unchanged; compose overrides it for the
-evaluation stack only.
+evaluation stack only. Chosen over an `ENABLE_DEV_TOKEN` flag, which would
+create a switch capable of turning password-less token minting on in a real
+production deployment — precisely what the `NODE_ENV` check exists to prevent.
 
-Because "a build with a token-minting endpoint" is a genuinely dangerous thing
-to run unnoticed, bootstrap prints a banner whenever `NODE_ENV !== 'production'`:
+Bootstrap prints a banner whenever `NODE_ENV !== 'production'`:
 
 ```
 ⚠  NODE_ENV=demo — POST /v1/dev/token is ENABLED and mints access
@@ -632,20 +629,11 @@ to run unnoticed, bootstrap prints a banner whenever `NODE_ENV !== 'production'`
    Never run this configuration in production.
 ```
 
-This was preferred over an `ENABLE_DEV_TOKEN` flag, which would create a switch
-capable of turning the endpoint on in a real production deployment — precisely
-what the `NODE_ENV` check exists to prevent.
-
-**Problem 2 — migrations and seeds do not exist in the runner image.** The
-production stage copies only `dist` and production dependencies, so `ts-node`,
-the TypeORM CLI, and `run-seed.ts` are all absent.
-
-They do not need to be: `src/database/migrations/**` and
-`src/database/seeds/**` are ordinary TypeScript under `src`, so `nest build`
-already emits them to `dist/database/`. What is missing is a compiled entry
-point. This design adds `src/database/migrate-and-seed.ts`, which initialises
-the datasource, runs `dataSource.runMigrations()`, calls `seed()`, and exits
-non-zero on failure.
+**Migrate and seed.** `src/database/migrations/**` and `src/database/seeds/**`
+already compile to `dist/database/` under `nest build`, so the runner image
+needs no `ts-node` or TypeORM CLI — only a compiled entry point. This design
+adds `src/database/migrate-and-seed.ts`, which initialises the datasource, runs
+`dataSource.runMigrations()`, calls `seed()`, and exits non-zero on failure.
 
 A one-shot compose service runs it:
 
