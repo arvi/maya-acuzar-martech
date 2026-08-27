@@ -11,7 +11,6 @@ import { CorporateHolder } from './holders/entities/corporate-holder.entity';
 import { CorporateSignatory } from './holders/entities/corporate-signatory.entity';
 import { IndividualHolder } from './holders/entities/individual-holder.entity';
 import { SendMoneyModule } from './send-money/send-money.module';
-import { TransfersModule } from './transfers/transfers.module';
 
 @Module({
   imports: [
@@ -32,7 +31,6 @@ import { TransfersModule } from './transfers/transfers.module';
     AuthModule,
     HealthModule,
     AccountsModule,
-    TransfersModule,
     SendMoneyModule,
   ],
   controllers: [],
