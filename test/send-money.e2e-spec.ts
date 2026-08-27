@@ -304,6 +304,214 @@ describe('Send money (e2e)', () => {
     }
   });
 
+  it('excludes a ledger entry from a previous day/month when computing limit usage', async () => {
+    // Arturo (Montenegro Industries) has the seed default limits: PHP 50,000/day,
+    // PHP 500,000/month. A backdated debit of PHP 49,999.00 would blow the daily
+    // limit for any subsequent transfer today if the SQL boundary in
+    // AccountLimitsService.getUsage() were wrong and counted it anyway.
+    const [sender] = await dataSource.query(
+      `SELECT h.id AS holder_id, a.id AS account_id
+         FROM account_holders h
+         JOIN accounts a ON a.account_holder_id = h.id
+        WHERE h.display_name = 'Montenegro Industries'`,
+    );
+    const [destination] = await dataSource.query(
+      `SELECT a.id AS account_id
+         FROM account_holders h
+         JOIN accounts a ON a.account_holder_id = h.id
+        WHERE h.display_name = 'Ethan Del Rosario'`,
+    );
+
+    // Computed rather than a fixed 'now() - interval 2 days': a fixed offset
+    // would cross into the previous month on the 1st/2nd of a calendar month,
+    // silently changing which boundary this timestamp tests. GREATEST clamps
+    // it to month start on any day where 2-days-ago would otherwise predate
+    // the month; that clamp is only NOT strictly before today's midnight when
+    // today IS the 1st (month start), which is the one calendar day where "a
+    // moment before today but still this month" cannot exist at all — dailyIsExclusive
+    // below detects that case so the assertions stay correct instead of flaky.
+    const [{ chosen_daily: chosenDaily, day_start: dayStart }] =
+      await dataSource.query(
+        `SELECT
+           GREATEST(
+             date_trunc('month', now() AT TIME ZONE 'Asia/Manila'),
+             date_trunc('day', now() AT TIME ZONE 'Asia/Manila') - interval '1 hour'
+           ) AT TIME ZONE 'Asia/Manila' AS chosen_daily,
+           date_trunc('day', now() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila' AS day_start`,
+      );
+    const dailyIsExclusive = new Date(chosenDaily) < new Date(dayStart);
+
+    const backdatedDailyTransferId = '11111111-1111-4111-8111-111111111111';
+    const backdatedMonthlyTransferId = '22222222-2222-4222-8222-222222222222';
+
+    try {
+      // Timestamped just after this month started (or, on every day but the
+      // 1st, roughly 2 days ago) — before today's Manila-time midnight, but
+      // always inside the current month.
+      const [dailyTransfer] = await dataSource.query(
+        `INSERT INTO transfers
+           (public_id, source_account_id, destination_account_id, amount_minor,
+            status, posted_at, note, idempotency_key)
+         VALUES ($1, $2, $3, $4, 'posted', $6, 'Backdated daily boundary fixture', $5)
+         RETURNING id`,
+        [
+          backdatedDailyTransferId,
+          sender.account_id,
+          destination.account_id,
+          4_999_900,
+          `test-daily-boundary-${backdatedDailyTransferId}`,
+          chosenDaily,
+        ],
+      );
+
+      await dataSource.query(
+        `INSERT INTO ledger_entries (transfer_id, account_id, direction, amount_minor, posted_at)
+         VALUES
+           ($1, $2, 'debit',  $3, $5),
+           ($1, $4, 'credit', $3, $5)`,
+        [
+          dailyTransfer.id,
+          sender.account_id,
+          4_999_900,
+          destination.account_id,
+          chosenDaily,
+        ],
+      );
+      await dataSource.query(
+        `UPDATE accounts SET balance_minor = balance_minor - $1 WHERE id = $2`,
+        [4_999_900, sender.account_id],
+      );
+      await dataSource.query(
+        `UPDATE accounts SET balance_minor = balance_minor + $1 WHERE id = $2`,
+        [4_999_900, destination.account_id],
+      );
+
+      // Backdated 35 days ago: safely outside the current calendar month
+      // regardless of what day of the month the suite runs on.
+      const [monthlyTransfer] = await dataSource.query(
+        `INSERT INTO transfers
+           (public_id, source_account_id, destination_account_id, amount_minor,
+            status, posted_at, note, idempotency_key)
+         VALUES ($1, $2, $3, $4, 'posted', now() - interval '35 days', 'Backdated monthly boundary fixture', $5)
+         RETURNING id`,
+        [
+          backdatedMonthlyTransferId,
+          sender.account_id,
+          destination.account_id,
+          3_999_900,
+          `test-monthly-boundary-${backdatedMonthlyTransferId}`,
+        ],
+      );
+
+      await dataSource.query(
+        `INSERT INTO ledger_entries (transfer_id, account_id, direction, amount_minor, posted_at)
+         VALUES
+           ($1, $2, 'debit',  $3, now() - interval '35 days'),
+           ($1, $4, 'credit', $3, now() - interval '35 days')`,
+        [
+          monthlyTransfer.id,
+          sender.account_id,
+          3_999_900,
+          destination.account_id,
+        ],
+      );
+      await dataSource.query(
+        `UPDATE accounts SET balance_minor = balance_minor - $1 WHERE id = $2`,
+        [3_999_900, sender.account_id],
+      );
+      await dataSource.query(
+        `UPDATE accounts SET balance_minor = balance_minor + $1 WHERE id = $2`,
+        [3_999_900, destination.account_id],
+      );
+
+      // API-level proof: a normal-sized transfer today still succeeds, so the
+      // backdated debit was excluded from today's usage window.
+      const token = await tokenFor('arturo.montenegro');
+
+      const resolved = await request(app.getHttpServer())
+        .post('/v1/send-money/resolve')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          recipient: { type: 'username', value: 'ethan.delrosario' },
+          amount: '100.00',
+        })
+        .expect(200);
+
+      expect(resolved.body).toMatchObject({
+        statusCode: 200,
+        message: 'Recipient resolved.',
+        data: { recipient: { displayName: 'Ethan Del Rosario' } },
+      });
+      expect(resolved.body.data.errors).toBeUndefined();
+
+      // SQL-level proof: query the same boundary directly and confirm the
+      // backdated amounts are excluded, independent of the API-level
+      // assertion above. The 35-days-ago entry is always from a previous
+      // month, so daily usage always excludes it. The "2 days ago" entry is
+      // excluded from daily usage on every day except the 1st of the month,
+      // where no timestamp can be both before today and inside this month —
+      // dailyIsExclusive (computed above from the same GREATEST clamp used to
+      // pick chosenDaily) tracks which case this run landed in.
+      const [dailyUsage] = await dataSource.query(
+        `SELECT COALESCE(SUM(amount_minor), 0) AS total
+           FROM ledger_entries
+          WHERE account_id = $1
+            AND direction = 'debit'
+            AND posted_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila'`,
+        [sender.account_id],
+      );
+      expect(Number(dailyUsage.total)).toBe(dailyIsExclusive ? 0 : 4_999_900);
+
+      // The near-month-start entry (4,999,900) always falls inside the
+      // current calendar month and must always count; only the 35-days-ago
+      // entry (3,999,900) should be excluded. If the monthly boundary were
+      // broken and counted it too, the total below would be 8,999,800.
+      const [monthlyUsage] = await dataSource.query(
+        `SELECT COALESCE(SUM(amount_minor), 0) AS total
+           FROM ledger_entries
+          WHERE account_id = $1
+            AND direction = 'debit'
+            AND posted_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila'`,
+        [sender.account_id],
+      );
+      expect(Number(monthlyUsage.total)).toBe(4_999_900);
+    } finally {
+      // ledger_entries is append-only (trg_ledger_entries_immutable rejects
+      // every UPDATE/DELETE unconditionally, and the FK from ledger_entries to
+      // transfers is ON DELETE RESTRICT), so the backdated rows above can never
+      // be removed. Undo their effect the same way the schema's own comments
+      // prescribe corrections be made: a compensating reversal pair, posted
+      // now with transfer_id NULL (a manual adjustment, not a transfer) so it
+      // is invisible to getUsage()'s `transfer_id IS NOT NULL` filter and
+      // therefore can't itself pollute another test's limit-usage window. This
+      // restores accounts.balance_minor for Arturo and Ethan; it leaves two
+      // harmless, correctly-dated historical transfers/ledger rows behind,
+      // which no assertion in this file depends on the absence of.
+      await dataSource.query(
+        `INSERT INTO ledger_entries (transfer_id, account_id, direction, amount_minor)
+         VALUES
+           (NULL, $1, 'credit', $2),
+           (NULL, $3, 'debit',  $2)`,
+        [sender.account_id, 4_999_900, destination.account_id],
+      );
+      await dataSource.query(
+        `INSERT INTO ledger_entries (transfer_id, account_id, direction, amount_minor)
+         VALUES
+           (NULL, $1, 'credit', $2),
+           (NULL, $3, 'debit',  $2)`,
+        [sender.account_id, 3_999_900, destination.account_id],
+      );
+      await dataSource.query(
+        `UPDATE accounts SET balance_minor = balance_minor + $1 WHERE id = $2`,
+        [4_999_900 + 3_999_900, sender.account_id],
+      );
+      await dataSource.query(
+        `UPDATE accounts SET balance_minor = balance_minor - $1 WHERE id = $2`,
+        [4_999_900 + 3_999_900, destination.account_id],
+      );
+    }
+  });
+
   it('leaves /health outside the envelope', async () => {
     const response = await request(app.getHttpServer())
       .get('/health')
