@@ -20,7 +20,12 @@
     "Keycloak",
     "demoable",
     "unmigrated",
-    "psql"
+    "psql",
+    "pipefail",
+    "uuidgen",
+    "esac",
+    "supertest",
+    "conname"
   ],
   "dictionaries": [
     "typescript",
@@ -30,5 +35,10 @@
     "en-gb",
     "sql"
   ],
-  "ignorePaths": ["node_modules", "biome.json", "dist/", "package.json"]
+  "ignorePaths": [
+    "node_modules",
+    "biome.json",
+    "dist/",
+    "package.json"
+  ]
 }
