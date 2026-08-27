@@ -4,6 +4,12 @@ import { EntityManager, Repository } from 'typeorm';
 import { CALENDAR_BOUNDARY_TIMEZONE } from '../common/domain.types';
 import { AccountLimit } from './entities/account-limit.entity';
 
+/**
+ * Which side of the ledger a limit is measuring. Sender limits bound outbound
+ * debits; recipient limits bound inbound credits, against the same columns.
+ */
+export type LimitDirection = 'debit' | 'credit';
+
 export interface LimitUsage {
   dailyUsedMinor: number;
   monthlyUsedMinor: number;
@@ -27,20 +33,22 @@ export class AccountLimitsService {
   }
 
   /**
-   * Sums posted debits across every account the holder owns, inside the current
-   * day and month windows.
+   * Sums posted entries in one direction across every account the holder owns,
+   * inside the current day and month windows.
    *
    * The windows are computed in CALENDAR_BOUNDARY_TIMEZONE via Postgres
    * (`AT TIME ZONE` + `date_trunc`) rather than in JS. Doing it in Node would
    * mean reimplementing DST-aware month boundaries against the server's local
    * clock, which is a different clock from the one the product promises.
    *
-   * Only 'posted' transfers count: pending ones have not moved money, and
-   * failed/reversed ones must not consume a customer's headroom.
+   * Only entries tied to a transfer count. An opening balance or a manual
+   * adjustment is not a transfer, and letting one consume a customer's
+   * headroom would mean an operational correction silently blocks their money.
    */
   async getUsage(
     accountHolderId: number,
     manager: EntityManager,
+    direction: LimitDirection,
   ): Promise<LimitUsage> {
     const [row] = await manager.query(
       `
@@ -60,10 +68,11 @@ export class AccountLimitsService {
       FROM ledger_entries le
       CROSS JOIN bounds
       WHERE le.account_id IN (SELECT id FROM holder_accounts)
-        AND le.direction = 'debit'
+        AND le.direction = $3
+        AND le.transfer_id IS NOT NULL
         AND le.posted_at >= bounds.month_start
       `,
-      [accountHolderId, CALENDAR_BOUNDARY_TIMEZONE],
+      [accountHolderId, CALENDAR_BOUNDARY_TIMEZONE, direction],
     );
 
     return {
@@ -72,12 +81,17 @@ export class AccountLimitsService {
     };
   }
 
-  /** Usage plus remaining headroom, floored at zero. */
+  /** Usage plus remaining headroom in one direction, floored at zero. */
   async evaluate(
     limit: AccountLimit,
     manager: EntityManager,
+    direction: LimitDirection,
   ): Promise<LimitEvaluation> {
-    const usage = await this.getUsage(limit.accountHolderId, manager);
+    const usage = await this.getUsage(
+      limit.accountHolderId,
+      manager,
+      direction,
+    );
 
     return {
       limit,

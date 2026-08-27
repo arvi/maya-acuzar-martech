@@ -47,6 +47,7 @@ export class AccountsService {
     const evaluation = await this.limitsService.evaluate(
       limit,
       this.accountRepository.manager,
+      'debit',
     );
 
     return AccountLimitResponseDto.from({

@@ -195,7 +195,11 @@ export class TransfersService {
     // reading — deny by default — would block every holder seeded without one.
     if (!limit) return;
 
-    const usage = await this.limitsService.getUsage(accountHolderId, manager);
+    const usage = await this.limitsService.getUsage(
+      accountHolderId,
+      manager,
+      'debit',
+    );
 
     if (usage.dailyUsedMinor + amountMinor > limit.dailyLimitMinor) {
       throw new UnprocessableEntityException({
