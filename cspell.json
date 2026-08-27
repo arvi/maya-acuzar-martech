@@ -36,10 +36,5 @@
     "en-gb",
     "sql"
   ],
-  "ignorePaths": [
-    "node_modules",
-    "biome.json",
-    "dist/",
-    "package.json"
-  ]
+  "ignorePaths": ["node_modules", "biome.json", "dist/", "package.json"]
 }
