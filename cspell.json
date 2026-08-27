@@ -1,31 +1,32 @@
 {
   "version": "0.2",
   "words": [
-    "dbgate",
-    "arvi",
-    "martech",
-    "isready",
-    "plpgsql",
-    "errcode",
-    "pgcrypto",
-    "centavos",
-    "unforgeable",
     "Adelaida",
-    "Magtalas",
     "Fabregas",
-    "Miggy",
-    "delrosario",
-    "Salazar",
-    "bobbie",
     "Keycloak",
+    "Magtalas",
+    "Miggy",
+    "Salazar",
+    "arvi",
+    "bobbie",
+    "centavos",
+    "conname",
+    "dbgate",
+    "delrosario",
     "demoable",
-    "unmigrated",
-    "psql",
-    "pipefail",
-    "uuidgen",
+    "errcode",
     "esac",
+    "isready",
+    "martech",
+    "pgcrypto",
+    "pipefail",
+    "plpgsql",
+    "psql",
     "supertest",
-    "conname"
+    "unforgeable",
+    "unmigrated",
+    "uuidgen",
+    "worktree"
   ],
   "dictionaries": [
     "typescript",
@@ -35,10 +36,5 @@
     "en-gb",
     "sql"
   ],
-  "ignorePaths": [
-    "node_modules",
-    "biome.json",
-    "dist/",
-    "package.json"
-  ]
+  "ignorePaths": ["node_modules", "biome.json", "dist/", "package.json"]
 }

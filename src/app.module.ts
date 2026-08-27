@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccountsModule } from './accounts/accounts.module';
+import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AccountHolder } from './holders/entities/account-holder.entity';
@@ -9,7 +10,8 @@ import { AuthIdentity } from './holders/entities/auth-identity.entity';
 import { CorporateHolder } from './holders/entities/corporate-holder.entity';
 import { CorporateSignatory } from './holders/entities/corporate-signatory.entity';
 import { IndividualHolder } from './holders/entities/individual-holder.entity';
-import { TransfersModule } from './transfers/transfers.module';
+import { MeModule } from './me/me.module';
+import { SendMoneyModule } from './send-money/send-money.module';
 
 @Module({
   imports: [
@@ -27,9 +29,11 @@ import { TransfersModule } from './transfers/transfers.module';
       AuthIdentity,
     ]),
 
+    AuthModule,
     HealthModule,
     AccountsModule,
-    TransfersModule,
+    SendMoneyModule,
+    MeModule,
   ],
   controllers: [],
   providers: [],

@@ -8,6 +8,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('Health')
 @Controller({
@@ -18,6 +19,7 @@ export class HealthController {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   @Get()
+  @Public()
   @ApiOperation({ summary: 'Liveliness & Database Readiness Probe' })
   @ApiResponse({
     status: HttpStatus.OK,

@@ -75,6 +75,10 @@ export class Transfer {
   @Column({ type: 'text', nullable: true })
   failureReason: string | null;
 
+  /** NULL = sender attached no note. Max 100 chars, enforced by the schema. */
+  @Column({ type: 'text', nullable: true })
+  note: string | null;
+
   /** NULL = not yet posted to the ledger. */
   @Column({ type: 'timestamptz', nullable: true })
   postedAt: Date | null;
