@@ -226,4 +226,78 @@ describe('SendMoneyRulesService', () => {
     // Only the balance rule fires; no limit codes.
     expect(codesFrom(result)).toEqual([SendMoneyErrorCode.InsufficientFunds]);
   });
+
+  // Phase two (execute) fetches accounts directly by id under lock and never
+  // runs them back through RecipientResolverService.pickActive, so these two
+  // tests call evaluateResolved directly with an already-stale party — exactly
+  // what execute() passes in — bypassing the resolver entirely, the same way a
+  // suspension landing inside the 120-second resolve-to-execute window would.
+  describe('evaluateResolved (the phase-two re-check)', () => {
+    it('flags a sender whose account was suspended after resolution', async () => {
+      const errors = await service.evaluateResolved(
+        party({ accountStatus: 'suspended' }),
+        party({ accountId: 2, accountHolderId: 2 }),
+        150_000,
+        manager as unknown as EntityManager,
+      );
+
+      expect(errors.map((e) => e.code)).toContain(
+        SendMoneyErrorCode.SenderNoActiveAccount,
+      );
+    });
+
+    it('flags a sender whose holder was suspended after resolution', async () => {
+      const errors = await service.evaluateResolved(
+        party({ holderStatus: 'suspended' }),
+        party({ accountId: 2, accountHolderId: 2 }),
+        150_000,
+        manager as unknown as EntityManager,
+      );
+
+      expect(errors.map((e) => e.code)).toContain(
+        SendMoneyErrorCode.SenderNoActiveAccount,
+      );
+    });
+
+    it('flags a recipient whose account was suspended after resolution, reporting account status', async () => {
+      const errors = await service.evaluateResolved(
+        party(),
+        party({
+          accountId: 2,
+          accountHolderId: 2,
+          accountStatus: 'suspended',
+        }),
+        150_000,
+        manager as unknown as EntityManager,
+      );
+
+      expect(errors).toContainEqual(
+        expect.objectContaining({
+          code: SendMoneyErrorCode.RecipientNotActive,
+          details: { status: 'suspended' },
+        }),
+      );
+    });
+
+    it('flags a recipient whose holder was suspended after resolution, preferring holder status in the report', async () => {
+      const errors = await service.evaluateResolved(
+        party(),
+        party({
+          accountId: 2,
+          accountHolderId: 2,
+          accountStatus: 'active',
+          holderStatus: 'suspended',
+        }),
+        150_000,
+        manager as unknown as EntityManager,
+      );
+
+      expect(errors).toContainEqual(
+        expect.objectContaining({
+          code: SendMoneyErrorCode.RecipientNotActive,
+          details: { status: 'suspended' },
+        }),
+      );
+    });
+  });
 });

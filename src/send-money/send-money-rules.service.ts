@@ -141,6 +141,18 @@ export class SendMoneyRulesService {
     const errors: SendMoneyError[] = [];
 
     if (sender) {
+      // Phase one only ever reaches here with a party already filtered to
+      // active by RecipientResolverService.pickActive, so this is a no-op for
+      // resolve. Phase two re-fetches the same accounts by id under lock and
+      // never runs pickActive again, so a suspension landing in the window
+      // between resolve and execute must be caught here instead.
+      if (
+        sender.accountStatus !== 'active' ||
+        sender.holderStatus !== 'active'
+      ) {
+        errors.push(error(SendMoneyErrorCode.SenderNoActiveAccount));
+      }
+
       if (sender.balanceMinor < amountMinor) {
         errors.push(
           error(SendMoneyErrorCode.InsufficientFunds, {
@@ -163,6 +175,22 @@ export class SendMoneyRulesService {
     }
 
     if (recipient) {
+      // Same rationale as the sender check above: a no-op for phase one,
+      // load-bearing for phase two.
+      if (
+        recipient.accountStatus !== 'active' ||
+        recipient.holderStatus !== 'active'
+      ) {
+        errors.push(
+          error(SendMoneyErrorCode.RecipientNotActive, {
+            status:
+              recipient.holderStatus !== 'active'
+                ? recipient.holderStatus
+                : recipient.accountStatus,
+          }),
+        );
+      }
+
       errors.push(
         ...(await this.checkLimits(
           recipient.accountHolderId,

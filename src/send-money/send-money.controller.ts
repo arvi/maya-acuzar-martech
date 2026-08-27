@@ -1,6 +1,16 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -9,8 +19,10 @@ import {
 import { CurrentIdentity } from '../auth/decorators/current-identity.decorator';
 import type { AuthenticatedIdentity } from '../auth/identity.types';
 import { ResponseMessage } from '../common/decorators/response-message.decorator';
+import { ExecuteTransferDto } from './dto/execute-transfer.dto';
 import { ResolutionResponseDto } from './dto/resolution-response.dto';
 import { ResolveTransferDto } from './dto/resolve-transfer.dto';
+import { SendMoneyReceiptDto } from './dto/send-money-receipt.dto';
 import { SendMoneyService } from './send-money.service';
 
 @ApiTags('Send Money')
@@ -145,5 +157,54 @@ export class SendMoneyController {
     @CurrentIdentity() identity: AuthenticatedIdentity,
   ): Promise<ResolutionResponseDto> {
     return this.sendMoneyService.resolve(dto, identity);
+  }
+
+  @Post()
+  @ResponseMessage('Transfer posted.')
+  @ApiOperation({
+    summary: 'Complete a transfer using a confirmation token',
+    description:
+      'Spends the `resolutionToken` from POST /v1/send-money/resolve. Every rule is re-run against live, locked balances before money moves — the token is a confirmation, not an authorisation.\n\n' +
+      'The transfer, its debit/credit ledger pair, both balances and the outbox event either all commit or none do.',
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description:
+      'Required. Replaying the same key returns the original transfer instead of sending twice.',
+  })
+  @ApiCreatedResponse({
+    type: SendMoneyReceiptDto,
+    schema: {
+      example: {
+        statusCode: 201,
+        data: {
+          reference: '3f2a7c18-9d4e-4c1b-9f7a-2b8e5d6c1a90',
+          recipient: { name: 'Ethan Del Rosario' },
+          amount: '1500.00',
+          amountMinor: 150000,
+          currency: 'PHP',
+          note: 'Lunch',
+          postedAt: '2026-08-27T09:16:12.000Z',
+        },
+        message: 'Transfer posted.',
+        timestamp: '2026-08-27T09:16:12.000Z',
+      },
+    },
+  })
+  @ApiForbiddenResponse({
+    description:
+      'The resolution token expired (RESOLUTION_TOKEN_EXPIRED), is invalid, or was issued to another identity.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description:
+      'A rule that passed at resolve time no longer holds — same codes, with message "Transfer no longer valid; please confirm again."',
+  })
+  execute(
+    @Body() dto: ExecuteTransferDto,
+    @CurrentIdentity() identity: AuthenticatedIdentity,
+    @Headers('idempotency-key') idempotencyKey: string,
+  ): Promise<SendMoneyReceiptDto> {
+    return this.sendMoneyService.execute(dto, identity, idempotencyKey);
   }
 }
