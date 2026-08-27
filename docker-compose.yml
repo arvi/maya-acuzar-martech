@@ -18,7 +18,24 @@ services:
       timeout: 5s
       retries: 5
 
-  # 2. NestJS API
+  # 2. One-shot schema + fixture load. Exits; the API waits for it.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: maya_arvi_martech_migrate
+    # Overrides the restart: always the long-running services use — a task that
+    # is meant to exit must not be restarted on success.
+    restart: "no"
+    command: ["node", "dist/database/migrate-and-seed.js"]
+    environment:
+      NODE_ENV: demo
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 3. NestJS API
   api:
     build:
       context: .
@@ -29,11 +46,22 @@ services:
       - "${API_HOST_PORT:?required}:3000"
     environment:
       PORT: 3000
-      NODE_ENV: production
+      # Not 'production': the hardening keys off that exact string, and this
+      # stack needs /v1/dev/token to be demoable. The Dockerfile still sets
+      # production, so the image stays safe to deploy unchanged.
+      NODE_ENV: demo
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-demo-access-secret-not-for-production}
+      JWT_RESOLUTION_SECRET: ${JWT_RESOLUTION_SECRET:-demo-resolution-secret-not-for-production}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-3600}
+      JWT_RESOLUTION_TTL_SECONDS: ${JWT_RESOLUTION_TTL_SECONDS:-120}
+      JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8080/realms/send-money}
     depends_on:
       postgres:
         condition: service_healthy
+      # Never serve traffic against an unmigrated schema.
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
       interval: 10s
@@ -41,7 +69,7 @@ services:
       retries: 3
       start_period: 15s
 
-  # 3. DbGate DB UI
+  # 4. DbGate DB UI
   dbgate:
     image: dbgate/dbgate:alpine
     container_name: maya_arvi_martech_dbgate
