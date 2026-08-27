@@ -475,6 +475,11 @@ src/send-money/dto/execute-transfer.dto.ts
 src/send-money/dto/send-money-receipt.dto.ts
 
 src/database/migrations/<ts>-AddTransferNote.ts
+src/database/migrate-and-seed.ts              ← compiled entrypoint for the
+                                                 one-shot `migrate` service
+
+scripts/scenarios.sh
+docs/SEND-MONEY.md
 ```
 
 Each service has one job: the resolver answers "which account", the rules
@@ -483,7 +488,9 @@ this token real", and `SendMoneyService` owns the transaction. They are
 separately testable because none of them needs the others' internals.
 
 Modified: `main.ts`, `app.module.ts`, `accounts/account-limits.service.ts`,
-`database/seeds/seed-data.ts`, `transfers/*`, `.env.example`.
+`database/seeds/seed-data.ts`, `transfers/*`, `.env.example`,
+`docker-compose.yml` (the `migrate` service, `NODE_ENV: demo`, JWT secrets),
+`cspell.json`.
 
 ## 8. Testing
 
@@ -557,7 +564,8 @@ naming what it skipped and how to include it, so the exclusion is visible
 rather than silent.
 
 The script checks for `jq` up front and fails with an install hint. `BASE_URL`
-defaults to `http://localhost:3000` and is overridable.
+defaults to `http://localhost:${API_HOST_PORT:-3000}` and is overridable, so it
+works against the compose stack without arguments.
 
 `sender-limit` and `recipient-limit` need usage that a fresh seed does not
 have, so they first post smaller transfers to build it up, then assert the
@@ -596,11 +604,105 @@ WHERE idempotency_key = '…'` returning `1`.
 The document also lists the seeded identities in a table — username, mobile,
 balance, limits, status — since every scenario refers to them.
 
-### `npm run demo`
+### `docker compose up`
 
-One command: `db:reset` → `migration:run` → `db:seed` → `start:dev`. A single
-documented entry point beats a four-step preamble that an evaluator can get
-half-right.
+The single entry point. The repository already ships a `docker-compose.yml`
+(postgres + api + DbGate) and a multi-stage `Dockerfile`; this design adds what
+is missing for the stack to come up already migrated, already seeded, and
+demoable. No `npm run demo` script — a second entry point that does the same
+thing differently is a way for the two to drift.
+
+**Problem 1 — the api container runs `NODE_ENV=production`,** under which this
+design disables `/dev/token` and hard-fails bootstrap on unset JWT secrets. As
+shipped, `docker compose up` would produce an app the demo cannot drive.
+
+Compose sets `NODE_ENV: demo` on the api service instead. Every production
+hardening check keys off `NODE_ENV === 'production'` **exactly**, so `demo`
+behaves as a non-production build: the dev-token module is registered and the
+secret fallbacks apply. The `Dockerfile` keeps its own `ENV NODE_ENV=production`
+so the image is still safe to deploy unchanged; compose overrides it for the
+evaluation stack only.
+
+Because "a build with a token-minting endpoint" is a genuinely dangerous thing
+to run unnoticed, bootstrap prints a banner whenever `NODE_ENV !== 'production'`:
+
+```
+⚠  NODE_ENV=demo — POST /v1/dev/token is ENABLED and mints access
+   tokens for any seeded identity without a password.
+   Never run this configuration in production.
+```
+
+This was preferred over an `ENABLE_DEV_TOKEN` flag, which would create a switch
+capable of turning the endpoint on in a real production deployment — precisely
+what the `NODE_ENV` check exists to prevent.
+
+**Problem 2 — migrations and seeds do not exist in the runner image.** The
+production stage copies only `dist` and production dependencies, so `ts-node`,
+the TypeORM CLI, and `run-seed.ts` are all absent.
+
+They do not need to be: `src/database/migrations/**` and
+`src/database/seeds/**` are ordinary TypeScript under `src`, so `nest build`
+already emits them to `dist/database/`. What is missing is a compiled entry
+point. This design adds `src/database/migrate-and-seed.ts`, which initialises
+the datasource, runs `dataSource.runMigrations()`, calls `seed()`, and exits
+non-zero on failure.
+
+A one-shot compose service runs it:
+
+```yaml
+migrate:
+  build: { context: ., dockerfile: Dockerfile }
+  container_name: maya_arvi_martech_migrate
+  restart: "no"
+  command: ["node", "dist/database/migrate-and-seed.js"]
+  environment:
+    NODE_ENV: demo
+    DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  depends_on:
+    postgres: { condition: service_healthy }
+
+api:
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+```
+
+`restart: "no"` overrides the `restart: always` the other services use — a
+task that is supposed to exit must not be restarted on success. The API waits
+on `service_completed_successfully`, so it never serves traffic against an
+unmigrated schema.
+
+The step is idempotent: `runMigrations()` skips applied migrations, and `seed()`
+already short-circuits on its marker subject. Re-running `docker compose up`
+is safe.
+
+Migration is kept out of the API's own startup deliberately. An app that
+migrates on boot cannot be scaled past one replica without two containers
+racing on the same DDL.
+
+**Reset.** `docker compose down -v` drops the volume; the next `up` migrates
+and seeds from scratch. Documented in `docs/SEND-MONEY.md`, since the scenarios
+that build up limit usage are only repeatable from a clean database.
+
+**Ports and URLs**, from the existing `.env` variables: the API on
+`${API_HOST_PORT}` (Swagger at `/docs`), DbGate on `${DBGATE_HOST_PORT}`, and
+Postgres on `${POSTGRES_HOST_PORT}`.
+
+DbGate is worth calling out as an evaluation aid in its own right: it is
+already in the compose file, so the SQL cross-checks in §9 can be pasted into a
+browser-based client with no `psql` installed and no connection string to
+assemble.
+
+### Running the scenarios against the stack
+
+`scripts/scenarios.sh` talks to the API over HTTP, so it runs from the host
+against the published port with no Node toolchain — only `curl` and `jq`:
+
+```
+docker compose up -d          # migrated, seeded, serving
+./scripts/scenarios.sh all
+```
+
+`BASE_URL` defaults to `http://localhost:${API_HOST_PORT:-3000}`.
 
 ### Swagger
 
